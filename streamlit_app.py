@@ -33,6 +33,15 @@ def cleanup_temp_files():
     if 'guests' in st.session_state:
         st.session_state.guests = None
 
+    if 'nametag_counts' in st.session_state:
+        st.session_state.nametag_counts = {}
+
+    if 'pending_review' in st.session_state:
+        st.session_state.pending_review = False
+
+    if 'multi_guest_rooms' in st.session_state:
+        st.session_state.multi_guest_rooms = {}
+
 
 def init_session_state():
     """Initialize session state variables."""
@@ -44,15 +53,20 @@ def init_session_state():
         st.session_state.guests = None
     if 'processing_complete' not in st.session_state:
         st.session_state.processing_complete = False
+    if 'pending_review' not in st.session_state:
+        st.session_state.pending_review = False
+    if 'nametag_counts' not in st.session_state:
+        st.session_state.nametag_counts = {}  # {room_key: count}
+    if 'multi_guest_rooms' not in st.session_state:
+        st.session_state.multi_guest_rooms = {}  # {room_key: {info about room}}
 
 
-def process_pdf(uploaded_file) -> tuple:
+def parse_pdf(uploaded_file) -> tuple:
     """
-    Process uploaded PDF and generate DOCX.
-    Returns (success: bool, message: str, docx_bytes: BytesIO or None)
+    Parse uploaded PDF and extract guest records.
+    Returns (success: bool, message: str, guests: list or None)
     """
     temp_pdf_path = None
-    temp_docx_path = None
 
     try:
         # Save uploaded PDF to temporary file
@@ -70,25 +84,37 @@ def process_pdf(uploaded_file) -> tuple:
 
         st.session_state.guests = guests
 
-        # Generate DOCX to temporary file
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.docx') as tmp_docx:
-            temp_docx_path = tmp_docx.name
-            st.session_state.temp_files.append(temp_docx_path)
+        # Group guests by room to find rooms with multiple guests
+        # Key: (room_number, last_name, arrival_day, departure_day) to uniquely identify a room booking
+        room_groups = {}
+        for guest in guests:
+            if guest.number_of_guests > 1:
+                room_key = f"{guest.room_number}|{guest.last_name}|{guest.arrival_day}|{guest.departure_day}"
+                if room_key not in room_groups:
+                    room_groups[room_key] = {
+                        'room_number': guest.room_number,
+                        'last_name': guest.last_name,
+                        'arrival_day': guest.arrival_day,
+                        'departure_day': guest.departure_day,
+                        'number_of_guests': guest.number_of_guests,
+                        'guest_records': []
+                    }
+                room_groups[room_key]['guest_records'].append(guest)
 
-        generator = NametageGenerator(guests)
-        pages = generator.generate(temp_docx_path)
-
-        # Read DOCX into memory for download
-        with open(temp_docx_path, 'rb') as f:
-            docx_bytes = BytesIO(f.read())
-
-        st.session_state.output_docx = docx_bytes
-        st.session_state.processing_complete = True
-
-        return True, f"Successfully processed {len(guests)} guests across {pages} pages.", docx_bytes
+        if room_groups:
+            st.session_state.multi_guest_rooms = room_groups
+            # Initialize nametag counts to number_of_guests (default = max)
+            for room_key, room_info in room_groups.items():
+                st.session_state.nametag_counts[room_key] = room_info['number_of_guests']
+            st.session_state.pending_review = True
+            return True, f"Found {len(guests)} guest records. {len(room_groups)} room(s) have multiple guests and need review.", guests
+        else:
+            # No multi-guest rooms, proceed directly
+            st.session_state.pending_review = False
+            return True, f"Found {len(guests)} guest records. No multi-guest rooms to review.", guests
 
     except Exception as e:
-        return False, f"Error processing PDF: {str(e)}", None
+        return False, f"Error parsing PDF: {str(e)}", None
 
     finally:
         # Clean up temporary PDF immediately after processing
@@ -99,6 +125,57 @@ def process_pdf(uploaded_file) -> tuple:
                     st.session_state.temp_files.remove(temp_pdf_path)
             except Exception:
                 pass
+
+
+def generate_docx(guests: list) -> tuple:
+    """
+    Generate DOCX from guest records, selecting based on nametag_counts per room.
+    Returns (success: bool, message: str, docx_bytes: BytesIO or None)
+    """
+    temp_docx_path = None
+
+    try:
+        # Build the final guest list based on user selections
+        final_guests = []
+        processed_rooms = set()
+
+        for guest in guests:
+            if guest.number_of_guests == 1:
+                # Single guest, always include
+                final_guests.append(guest)
+            else:
+                # Multi-guest room - use the room key to get user's selection
+                room_key = f"{guest.room_number}|{guest.last_name}|{guest.arrival_day}|{guest.departure_day}"
+
+                if room_key not in processed_rooms:
+                    # Get the count user selected for this room
+                    count = st.session_state.nametag_counts.get(room_key, guest.number_of_guests)
+                    # Get all guest records for this room
+                    room_guests = st.session_state.multi_guest_rooms.get(room_key, {}).get('guest_records', [guest])
+                    # Take only the selected number of nametags
+                    final_guests.extend(room_guests[:count])
+                    processed_rooms.add(room_key)
+
+        # Generate DOCX to temporary file
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.docx') as tmp_docx:
+            temp_docx_path = tmp_docx.name
+            st.session_state.temp_files.append(temp_docx_path)
+
+        generator = NametageGenerator(final_guests)
+        pages = generator.generate(temp_docx_path)
+
+        # Read DOCX into memory for download
+        with open(temp_docx_path, 'rb') as f:
+            docx_bytes = BytesIO(f.read())
+
+        st.session_state.output_docx = docx_bytes
+        st.session_state.processing_complete = True
+        st.session_state.pending_review = False
+
+        return True, f"Successfully generated {len(final_guests)} nametags across {pages} pages.", docx_bytes
+
+    except Exception as e:
+        return False, f"Error generating DOCX: {str(e)}", None
 
 
 def end_session():
@@ -159,15 +236,75 @@ def main():
         st.write(f"**Uploaded file:** {uploaded_file.name}")
         st.write(f"**File size:** {uploaded_file.size / 1024:.1f} KB")
 
-        # Process button
+        # Step 1: Parse PDF button (only show if not already parsed)
+        if not st.session_state.guests and not st.session_state.pending_review:
+            if st.button("📋 Parse PDF", type="primary", use_container_width=True):
+                with st.spinner("Parsing PDF..."):
+                    success, message, guests = parse_pdf(uploaded_file)
+
+                    if success:
+                        st.success(message)
+                        st.rerun()
+                    else:
+                        st.error(message)
+
+    # Step 2: Multi-guest review section
+    if st.session_state.pending_review and st.session_state.multi_guest_rooms:
+        st.markdown("---")
+        st.subheader("🔍 Review Multi-Guest Rooms")
+        st.info(
+            "The following rooms have multiple guests. For each room, "
+            "select how many nametags you want to print (e.g., private rooms may only need 1)."
+        )
+
+        for room_key, room_info in st.session_state.multi_guest_rooms.items():
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                st.write(
+                    f"**Room {room_info['room_number']}** - {room_info['last_name']} | "
+                    f"Guests: {room_info['number_of_guests']} | "
+                    f"Arrival: {room_info['arrival_day']} → Departure: {room_info['departure_day']}"
+                )
+            with col2:
+                count = st.number_input(
+                    f"Nametags",
+                    min_value=1,
+                    max_value=room_info['number_of_guests'],
+                    value=st.session_state.nametag_counts.get(room_key, room_info['number_of_guests']),
+                    key=f"count_{room_key}",
+                    label_visibility="collapsed"
+                )
+                st.session_state.nametag_counts[room_key] = count
+
+        st.markdown("---")
+
+        # Summary before generation
+        total_single = len([g for g in st.session_state.guests if g.number_of_guests == 1])
+        total_multi = sum(st.session_state.nametag_counts.values())
+        total_nametags = total_single + total_multi
+
+        st.write(f"**Total nametags to generate:** {total_nametags}")
+        st.caption(f"({total_single} from single-guest rooms + {total_multi} from multi-guest rooms)")
+
         if st.button("🔄 Generate Nametags", type="primary", use_container_width=True):
-            with st.spinner("Processing PDF and generating nametags..."):
-                success, message, docx_bytes = process_pdf(uploaded_file)
+            with st.spinner("Generating nametags..."):
+                success, message, docx_bytes = generate_docx(st.session_state.guests)
 
                 if success:
                     st.success(message)
+                    st.rerun()
                 else:
                     st.error(message)
+
+    # If no multi-guest reservations, generate directly after parsing
+    if st.session_state.guests and not st.session_state.pending_review and not st.session_state.processing_complete:
+        with st.spinner("Generating nametags..."):
+            success, message, docx_bytes = generate_docx(st.session_state.guests)
+
+            if success:
+                st.success(message)
+            else:
+                st.error(message)
 
     # Download section (show if processing is complete)
     if st.session_state.processing_complete and st.session_state.output_docx:
@@ -177,15 +314,33 @@ def main():
         # Guest summary
         if st.session_state.guests:
             guests = st.session_state.guests
-            st.write(f"**Total guests:** {len(guests)}")
+            # Calculate actual nametag count
+            total_single = len([g for g in guests if g.number_of_guests == 1])
+            total_multi = sum(st.session_state.nametag_counts.values())
+            total_nametags = total_single + total_multi
+            num_rooms = len(st.session_state.multi_guest_rooms) + total_single
 
-            # Show preview of first few guests
-            with st.expander("Preview guest list (first 10)"):
-                for i, guest in enumerate(guests[:10]):
-                    st.write(f"{i+1}. Room {guest.room_number}: {guest.last_name} "
-                            f"(Arrival: {guest.arrival_day}, Departure: {guest.departure_day})")
-                if len(guests) > 10:
-                    st.write(f"... and {len(guests) - 10} more guests")
+            st.write(f"**Total rooms:** {num_rooms}")
+            st.write(f"**Total nametags generated:** {total_nametags}")
+
+            # Show preview of rooms
+            with st.expander("Preview room list"):
+                # Show single-guest rooms
+                single_guests = [g for g in guests if g.number_of_guests == 1]
+                for i, guest in enumerate(single_guests[:5]):
+                    st.write(f"Room {guest.room_number}: {guest.last_name} "
+                            f"(Arrival: {guest.arrival_day}, Departure: {guest.departure_day}) "
+                            f"- 1 nametag")
+
+                # Show multi-guest rooms
+                for room_key, room_info in list(st.session_state.multi_guest_rooms.items())[:5]:
+                    count = st.session_state.nametag_counts.get(room_key, room_info['number_of_guests'])
+                    st.write(f"Room {room_info['room_number']}: {room_info['last_name']} "
+                            f"(Arrival: {room_info['arrival_day']}, Departure: {room_info['departure_day']}) "
+                            f"- {count}/{room_info['number_of_guests']} nametag(s)")
+
+                if num_rooms > 10:
+                    st.write(f"... and {num_rooms - 10} more rooms")
 
         # Download button
         st.session_state.output_docx.seek(0)
