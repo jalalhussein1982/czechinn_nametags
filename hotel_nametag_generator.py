@@ -362,14 +362,11 @@ class NametageGenerator:
         r_room.font.size = Pt(16)
         
         # ============================================================
-        # ROW 2: Reservation name (left-aligned with 10 space indent)
+        # ROW 2: Reservation name (centered)
         # ============================================================
         p2 = cell.add_paragraph()
-        p2.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        p2.alignment = WD_ALIGN_PARAGRAPH.CENTER
         set_spacing(p2, 2, 2)
-        
-        # 10 space indent
-        p2.add_run("          ")  # 10 spaces
         
         r_label = p2.add_run("Reservation name: ")
         r_label.font.size = Pt(10)
@@ -402,20 +399,39 @@ class NametageGenerator:
         qr_buffer.seek(0)
         qr_para.add_run().add_picture(qr_buffer, height=Cm(2.2))
         
-        # Info - 3 lines
-        # Line 1: From/To (12pt)
+        # Info - 3 lines with 1.5 line spacing
+        def set_spacing_15(para, before=0, after=0):
+            """Set paragraph spacing with 1.5 line spacing."""
+            pPr = para._p.get_or_add_pPr()
+            spacing = OxmlElement('w:spacing')
+            spacing.set(qn('w:before'), str(int(before * 20)))
+            spacing.set(qn('w:after'), str(int(after * 20)))
+            spacing.set(qn('w:line'), '360')  # 1.5 lines = 360 twips
+            spacing.set(qn('w:lineRule'), 'auto')
+            pPr.append(spacing)
+        
+        # Line 1: From/To (12pt) with bold dates
         i1 = info_cell.paragraphs[0]
-        set_spacing(i1, 0, 0)
-        i1.add_run(f"From: {guest.arrival_day}  To: {guest.departure_day}").font.size = Pt(12)
+        set_spacing_15(i1, 0, 0)
+        r_from = i1.add_run("From: ")
+        r_from.font.size = Pt(12)
+        r_from_val = i1.add_run(guest.arrival_day)
+        r_from_val.font.size = Pt(12)
+        r_from_val.bold = True
+        r_to = i1.add_run("  To: ")
+        r_to.font.size = Pt(12)
+        r_to_val = i1.add_run(guest.departure_day)
+        r_to_val.font.size = Pt(12)
+        r_to_val.bold = True
         
         # Line 2: Check-out time
         i2 = info_cell.add_paragraph()
-        set_spacing(i2, 0, 0)
+        set_spacing_15(i2, 0, 0)
         i2.add_run("Check-out time: 12:00").font.size = Pt(9)
         
         # Line 3: WiFi code
         i3 = info_cell.add_paragraph()
-        set_spacing(i3, 0, 0)
+        set_spacing_15(i3, 0, 0)
         i3.add_run(f"wifi code: {self.WIFI_PASSWORD}").font.size = Pt(9)
         
         # ============================================================
@@ -430,6 +446,138 @@ class NametageGenerator:
         p4.alignment = WD_ALIGN_PARAGRAPH.CENTER
         set_spacing(p4, 3, 0)
         p4.add_run(guest.id).font.size = Pt(8)
+    
+    def _add_empty_nametag(self, cell) -> None:
+        """Fill a table cell with an empty nametag template for manual filling."""
+        from docx.shared import Pt, Cm
+        from docx.oxml.ns import qn
+        from docx.oxml import OxmlElement
+        from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT
+        
+        def set_spacing(para, before=0, after=0):
+            """Set compact paragraph spacing."""
+            pPr = para._p.get_or_add_pPr()
+            spacing = OxmlElement('w:spacing')
+            spacing.set(qn('w:before'), str(int(before * 20)))
+            spacing.set(qn('w:after'), str(int(after * 20)))
+            spacing.set(qn('w:line'), '240')
+            spacing.set(qn('w:lineRule'), 'auto')
+            pPr.append(spacing)
+        
+        def set_spacing_15(para, before=0, after=0):
+            """Set paragraph spacing with 1.5 line spacing."""
+            pPr = para._p.get_or_add_pPr()
+            spacing = OxmlElement('w:spacing')
+            spacing.set(qn('w:before'), str(int(before * 20)))
+            spacing.set(qn('w:after'), str(int(after * 20)))
+            spacing.set(qn('w:line'), '360')
+            spacing.set(qn('w:lineRule'), 'auto')
+            pPr.append(spacing)
+        
+        def clear_borders(tbl_cell):
+            """Remove borders from a table cell."""
+            tc = tbl_cell._tc
+            tcPr = tc.get_or_add_tcPr()
+            tcBorders = OxmlElement('w:tcBorders')
+            for side in ['top', 'left', 'bottom', 'right']:
+                b = OxmlElement(f'w:{side}')
+                b.set(qn('w:val'), 'nil')
+                tcBorders.append(b)
+            tcPr.append(tcBorders)
+        
+        def set_cell_margins(tbl_cell, left=0, right=0, top=0, bottom=0):
+            """Set cell margins in twips."""
+            tc = tbl_cell._tc
+            tcPr = tc.get_or_add_tcPr()
+            tcMar = OxmlElement('w:tcMar')
+            for side, val in [('left', left), ('right', right), ('top', top), ('bottom', bottom)]:
+                m = OxmlElement(f'w:{side}')
+                m.set(qn('w:w'), str(val))
+                m.set(qn('w:type'), 'dxa')
+                tcMar.append(m)
+            tcPr.append(tcMar)
+        
+        # Delete all existing paragraphs
+        for p in list(cell.paragraphs):
+            p._element.getparent().remove(p._element)
+        
+        cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.TOP
+        
+        # ROW 1: CZECHINN + blank room number
+        p1 = cell.add_paragraph()
+        p1.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        set_spacing(p1, 3, 2)
+        
+        r_hotel = p1.add_run("CZECHINN")
+        r_hotel.font.name = "Calibri"
+        r_hotel._element.rPr.rFonts.set(qn('w:eastAsia'), 'Calibri')
+        r_hotel.font.size = Pt(18)
+        
+        p1.add_run("  ")
+        r_room = p1.add_run("# ______")
+        r_room.bold = True
+        r_room.font.size = Pt(16)
+        
+        # ROW 2: Reservation name with blank
+        p2 = cell.add_paragraph()
+        p2.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        set_spacing(p2, 2, 2)
+        
+        r_label = p2.add_run("Reservation name: ")
+        r_label.font.size = Pt(10)
+        
+        r_value = p2.add_run("_________________")
+        r_value.font.size = Pt(12)
+        r_value.bold = True
+        
+        # ROW 3: QR + Info with blanks
+        tbl = cell.add_table(rows=1, cols=2)
+        tbl.autofit = False
+        tbl.allow_autofit = False
+        
+        qr_cell = tbl.cell(0, 0)
+        info_cell = tbl.cell(0, 1)
+        qr_cell.width = Cm(3.2)
+        info_cell.width = Cm(6.3)
+        clear_borders(qr_cell)
+        clear_borders(info_cell)
+        set_cell_margins(qr_cell, 0, 0, 0, 0)
+        set_cell_margins(info_cell, 100, 0, 0, 0)
+        
+        # QR code
+        qr_para = qr_cell.paragraphs[0]
+        qr_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        set_spacing(qr_para, 0, 0)
+        qr_buffer = self._generate_wifi_qr()
+        qr_buffer.seek(0)
+        qr_para.add_run().add_picture(qr_buffer, height=Cm(2.2))
+        
+        # Info with blanks for dates
+        i1 = info_cell.paragraphs[0]
+        set_spacing_15(i1, 0, 0)
+        r_from = i1.add_run("From: ")
+        r_from.font.size = Pt(12)
+        r_from_val = i1.add_run("____")
+        r_from_val.font.size = Pt(12)
+        r_from_val.bold = True
+        r_to = i1.add_run("  To: ")
+        r_to.font.size = Pt(12)
+        r_to_val = i1.add_run("____")
+        r_to_val.font.size = Pt(12)
+        r_to_val.bold = True
+        
+        i2 = info_cell.add_paragraph()
+        set_spacing_15(i2, 0, 0)
+        i2.add_run("Check-out time: 12:00").font.size = Pt(9)
+        
+        i3 = info_cell.add_paragraph()
+        set_spacing_15(i3, 0, 0)
+        i3.add_run(f"wifi code: {self.WIFI_PASSWORD}").font.size = Pt(9)
+        
+        # ROW 4: No ID for empty nametags
+        for para in cell.paragraphs:
+            if not para.text.strip() and para != cell.paragraphs[0]:
+                para._element.getparent().remove(para._element)
     
     def _create_page_table(self) -> 'Table':
         """Create a 6x2 table for one page of nametags."""
@@ -473,10 +621,13 @@ class NametageGenerator:
             # Fill cells left-to-right, top-to-bottom
             for row_idx in range(self.ROWS_PER_PAGE):
                 for col_idx in range(self.TAGS_PER_ROW):
+                    cell = table.cell(row_idx, col_idx)
                     if guest_index < total_guests:
-                        cell = table.cell(row_idx, col_idx)
                         self._add_nametag_content(cell, self.guests[guest_index])
                         guest_index += 1
+                    else:
+                        # Fill remaining cells with empty nametags
+                        self._add_empty_nametag(cell)
         
         # Save document
         self.doc.save(output_path)
