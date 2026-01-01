@@ -231,10 +231,10 @@ class NametageGenerator:
     
     # Cell dimensions - A4: 21cm x 29.7cm
     CELL_WIDTH_CM = 10.5  # Width per cell (21cm / 2)
-    ROW_HEIGHT_CM = 4.85  # Height per row slightly under 29.7/6=4.95 for margins
+    ROW_HEIGHT_CM = 4.80  # Height per row
     
     # WiFi configuration
-    WIFI_SSID = "CzechInn"
+    WIFI_SSID = "Czech-Inn-Public-NEW"
     WIFI_PASSWORD = "iczechedinn"
     
     def __init__(self, guests: List[GuestRecord]):
@@ -338,32 +338,38 @@ class NametageGenerator:
         for p in list(cell.paragraphs):
             p._element.getparent().remove(p._element)
         
+        # Set cell vertical alignment to top
+        from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT
+        cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.TOP
+        
         # ============================================================
-        # ROW 1: CZECHINN (left) and room number (right) on same line
+        # ROW 1: CZECHINN + room number (centered together)
         # ============================================================
         p1 = cell.add_paragraph()
+        p1.alignment = WD_ALIGN_PARAGRAPH.CENTER
         set_spacing(p1, 3, 2)
         
-        # CZECHINN
+        # CZECHINN (Calibri, 18pt)
         r_hotel = p1.add_run("CZECHINN")
-        r_hotel.font.name = "Geo Sans Light"
-        r_hotel._element.rPr.rFonts.set(qn('w:eastAsia'), 'Geo Sans Light')
+        r_hotel.font.name = "Calibri"
+        r_hotel._element.rPr.rFonts.set(qn('w:eastAsia'), 'Calibri')
         r_hotel.font.size = Pt(18)
         
-        # Spaces to push room number right
-        p1.add_run("                    ")  # Use spaces as separator
-        
-        # Room number
+        # Space + Room number (right next to CZECHINN)
+        p1.add_run("  ")  # Small space between
         r_room = p1.add_run(f"# {guest.room_number}")
         r_room.bold = True
         r_room.font.size = Pt(16)
         
         # ============================================================
-        # ROW 2: Reservation name: LASTNAME
+        # ROW 2: Reservation name (left-aligned with 10 space indent)
         # ============================================================
         p2 = cell.add_paragraph()
-        p2.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p2.alignment = WD_ALIGN_PARAGRAPH.LEFT
         set_spacing(p2, 2, 2)
+        
+        # 10 space indent
+        p2.add_run("          ")  # 10 spaces
         
         r_label = p2.add_run("Reservation name: ")
         r_label.font.size = Pt(10)
@@ -381,40 +387,48 @@ class NametageGenerator:
         
         qr_cell = tbl.cell(0, 0)
         info_cell = tbl.cell(0, 1)
-        qr_cell.width = Cm(3.0)
-        info_cell.width = Cm(6.5)
+        qr_cell.width = Cm(3.2)
+        info_cell.width = Cm(6.3)
         clear_borders(qr_cell)
         clear_borders(info_cell)
         set_cell_margins(qr_cell, 0, 0, 0, 0)
         set_cell_margins(info_cell, 100, 0, 0, 0)
         
-        # QR code
+        # QR code (larger)
         qr_para = qr_cell.paragraphs[0]
         qr_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
         set_spacing(qr_para, 0, 0)
         qr_buffer = self._generate_wifi_qr()
         qr_buffer.seek(0)
-        qr_para.add_run().add_picture(qr_buffer, height=Cm(2.0))
+        qr_para.add_run().add_picture(qr_buffer, height=Cm(2.2))
         
         # Info - 3 lines
+        # Line 1: From/To (12pt)
         i1 = info_cell.paragraphs[0]
         set_spacing(i1, 0, 0)
-        i1.add_run(f"From: {guest.arrival_day}  To: {guest.departure_day}").font.size = Pt(9)
+        i1.add_run(f"From: {guest.arrival_day}  To: {guest.departure_day}").font.size = Pt(12)
         
+        # Line 2: Check-out time
         i2 = info_cell.add_paragraph()
         set_spacing(i2, 0, 0)
         i2.add_run("Check-out time: 12:00").font.size = Pt(9)
         
+        # Line 3: WiFi code
         i3 = info_cell.add_paragraph()
         set_spacing(i3, 0, 0)
         i3.add_run(f"wifi code: {self.WIFI_PASSWORD}").font.size = Pt(9)
         
         # ============================================================
-        # ROW 4: ID value only
+        # ROW 4: ID value only - remove any trailing empty paragraphs first
         # ============================================================
+        # The nested table adds an empty paragraph - find and remove it
+        for para in cell.paragraphs:
+            if not para.text.strip() and para != cell.paragraphs[0]:
+                para._element.getparent().remove(para._element)
+        
         p4 = cell.add_paragraph()
         p4.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        set_spacing(p4, 2, 0)
+        set_spacing(p4, 3, 0)
         p4.add_run(guest.id).font.size = Pt(8)
     
     def _create_page_table(self) -> 'Table':
