@@ -97,6 +97,7 @@ def parse_pdf(uploaded_file) -> tuple:
                         'arrival_day': guest.arrival_day,
                         'departure_day': guest.departure_day,
                         'number_of_guests': guest.number_of_guests,
+                        'matchcode': guest.matchcode,
                         'guest_records': []
                     }
                 room_groups[room_key]['guest_records'].append(guest)
@@ -155,6 +156,10 @@ def generate_docx(guests: list) -> tuple:
                     # Take only the selected number of nametags
                     final_guests.extend(room_guests[:count])
                     processed_rooms.add(room_key)
+
+        # Reassign sequential IDs based on final guest list (no gaps)
+        for idx, guest in enumerate(final_guests):
+            guest.id = f"{idx:03d}"
 
         # Generate DOCX to temporary file
         with tempfile.NamedTemporaryFile(delete=False, suffix='.docx') as tmp_docx:
@@ -260,10 +265,12 @@ def main():
         for room_key, room_info in st.session_state.multi_guest_rooms.items():
             col1, col2 = st.columns([3, 1])
             with col1:
+                matchcode_display = f" | Matchcode: {room_info['matchcode']}" if room_info.get('matchcode') else ""
                 st.write(
                     f"**Room {room_info['room_number']}** - {room_info['last_name']} | "
                     f"Guests: {room_info['number_of_guests']} | "
                     f"Arrival: {room_info['arrival_day']} → Departure: {room_info['departure_day']}"
+                    f"{matchcode_display}"
                 )
             with col2:
                 count = st.number_input(

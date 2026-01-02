@@ -48,6 +48,7 @@ class GuestRecord:
     number_of_guests: int
     arrival_day: str
     departure_day: str
+    matchcode: str = ""  # Booking reference (e.g., "XXD/2521/1")
 
 
 # ============================================================================
@@ -82,6 +83,27 @@ class PDFParser:
             return matchcode.split('_')[0].upper()
         # Handle cases without underscore
         return matchcode.split('/')[0].upper() if '/' in matchcode else matchcode.upper()
+
+    def extract_booking_code(self, matchcode: str) -> str:
+        """
+        Extract booking reference code from matchcode string.
+        E.g., 'AHMAD_WASEEM_XXD/2521/1' -> 'XXD/2521/1'
+        """
+        if '/' not in matchcode:
+            return ""
+
+        # Find the position of the first '/'
+        slash_pos = matchcode.find('/')
+
+        # Look backwards from the slash to find the last underscore before it
+        last_underscore = matchcode.rfind('_', 0, slash_pos)
+
+        if last_underscore != -1:
+            # Return everything after the last underscore before the slash
+            return matchcode[last_underscore + 1:].strip()
+        else:
+            # No underscore before slash, return from start
+            return matchcode.strip()
     
     def parse_rooms(self, room_str: str) -> List[Tuple[str, int]]:
         """
@@ -199,9 +221,10 @@ class PDFParser:
     def _create_guest_records(self, entry: dict, start_id: int) -> None:
         """Create GuestRecord objects for each guest in an entry."""
         last_name = self.parse_matchcode(entry['matchcode'])
+        booking_code = self.extract_booking_code(entry['matchcode'])
         arrival = entry['arrival']
         departure = entry['departure']
-        
+
         current_id = start_id
         for room_number, guest_count in entry['rooms']:
             for _ in range(guest_count):
@@ -211,7 +234,8 @@ class PDFParser:
                     room_number=room_number,
                     number_of_guests=guest_count,
                     arrival_day=arrival,
-                    departure_day=departure
+                    departure_day=departure,
+                    matchcode=booking_code
                 )
                 self.guest_records.append(record)
                 current_id += 1
