@@ -378,10 +378,10 @@ class NametageGenerator:
         r_hotel.font.name = "Calibri"
         r_hotel._element.rPr.rFonts.set(qn('w:eastAsia'), 'Calibri')
         r_hotel.font.size = Pt(18)
-        
-        # Space + Room number (right next to CZECHINN)
+
+        # Space + Room number placeholder (blank for manual filling)
         p1.add_run("  ")  # Small space between
-        r_room = p1.add_run(f"# {guest.room_number}")
+        r_room = p1.add_run("# ______")
         r_room.bold = True
         r_room.font.size = Pt(16)
         
