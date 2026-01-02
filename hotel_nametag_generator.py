@@ -631,20 +631,21 @@ class NametageGenerator:
         """
         total_guests = len(self.guests)
         total_pages = (total_guests + self.TAGS_PER_PAGE - 1) // self.TAGS_PER_PAGE
-        
+
         guest_index = 0
-        
+
         for page_num in range(total_pages):
             # Add page break before new pages (not first page)
             if page_num > 0:
                 self.doc.add_page_break()
-            
+
             # Create table for this page
             table = self._create_page_table()
-            
-            # Fill cells left-to-right, top-to-bottom
-            for row_idx in range(self.ROWS_PER_PAGE):
-                for col_idx in range(self.TAGS_PER_ROW):
+
+            # Fill cells column by column (top-to-bottom in left column, then right column)
+            # Left column: 000-005, Right column: 006-011
+            for col_idx in range(self.TAGS_PER_ROW):
+                for row_idx in range(self.ROWS_PER_PAGE):
                     cell = table.cell(row_idx, col_idx)
                     if guest_index < total_guests:
                         self._add_nametag_content(cell, self.guests[guest_index])
@@ -652,7 +653,7 @@ class NametageGenerator:
                     else:
                         # Fill remaining cells with empty nametags
                         self._add_empty_nametag(cell)
-        
+
         # Save document
         self.doc.save(output_path)
         return total_pages
