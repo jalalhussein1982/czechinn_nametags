@@ -97,7 +97,7 @@ def parse_pdf(uploaded_file) -> tuple:
                         'arrival_day': guest.arrival_day,
                         'departure_day': guest.departure_day,
                         'number_of_guests': guest.number_of_guests,
-                        'matchcode': guest.matchcode,
+                        'matchcode': getattr(guest, 'matchcode', ''),
                         'guest_records': []
                     }
                 room_groups[room_key]['guest_records'].append(guest)
